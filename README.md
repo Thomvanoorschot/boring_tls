@@ -141,7 +141,7 @@ pub fn main() !void {
 ## Requirements
 
 - **Zig 0.15.0-dev** or later
-- **BoringSSL** (automatically built as dependency)
+- **BoringSSL** (automatically built version 0.20250514.0 as dependency)
 
 ## Building
 
