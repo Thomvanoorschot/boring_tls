@@ -1,16 +1,12 @@
 # BoringTLS
 
+## Introduction
+
+BoringTLS was created because I needed a TLS implementation for a TCP/HTTP client/server other than the one in the standard library. I could not find anything that worked easily so I created this library. It has been tested with the libxev TCP connection and works as expected. 
+
 ## Overview
 
 BoringTLS is a comprehensive TLS/SSL library for the Zig programming language, providing both client and server implementations. Built on Google's BoringSSL cryptographic library, it offers a robust foundation for secure communication applications. The library provides a high-level, memory-safe Zig interface to TLS functionality while leveraging the battle-tested security of BoringSSL underneath.
-
-## Features
-
-### Core TLS Support
-*   **Full TLS Protocol Support:** Complete implementation supporting TLS 1.2
-*   **Strong Security:** Built on Google's BoringSSL for proven cryptographic security
-*   **Memory Safety:** Zig-native interface with proper error handling and resource management
-*   **Certificate Verification:** Configurable certificate validation for clients
 
 ## Getting Started
 
@@ -167,4 +163,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Acknowledgments
 
 - Built on [BoringSSL](https://boringssl.googlesource.com/boringssl/) by Google
-- Inspired by the need for memory-safe TLS in Zig applications
