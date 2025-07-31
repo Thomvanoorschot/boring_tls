@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.15.0-dev.483+837e0f9c3",
     .dependencies = .{
         .boringssl = .{
-            .url = "https://github.com/google/boringssl/archive/refs/tags/0.20250514.0.tar.gz",
-            .hash = "1220bc773c53e74b5225b0dd0b2cedbf6410516ea95c1b5155c5785f7f2c9df2f250",
+            .url = "https://github.com/Thomvanoorschot/boringssl/archive/main.tar.gz",
+            .hash = "boringssl-0.20250514.0-zK0prF8BAABKsms1IEjcUGTOIMOpkBLSAyRcuR2BIVlx",
         },
     },
     .paths = .{
