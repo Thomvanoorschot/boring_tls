@@ -6,7 +6,7 @@
     .dependencies = .{
         .boringssl = .{
             .url = "https://github.com/Thomvanoorschot/boringssl/archive/main.tar.gz",
-            .hash = "boringssl-0.20250514.0-zK0prF8BAABKsms1IEjcUGTOIMOpkBLSAyRcuR2BIVlx",
+            .hash = "boringssl-0.20250514.0-zK0prLy1xAfRpqIBYbl48gYSlA95NLt3WrmR06bVT57a",
         },
     },
     .paths = .{
