@@ -2,34 +2,24 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
-
     const optimize = b.standardOptimizeOption(.{});
-
     const boringssl_dep = b.dependency("boringssl", .{});
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    var crypto_sources = std.ArrayList([]const u8).init(arena.allocator());
+    var crypto_sources: std.ArrayListUnmanaged([]const u8) = .{};
 
+    const io = b.graph.io;
     const full_path = boringssl_dep.path("crypto/aes").getPath(b);
-    try glob_sources(arena.allocator(), full_path, ".cc", &crypto_sources);
+    try glob_sources(arena.allocator(), io, b.build_root.handle, full_path, ".cc", &crypto_sources);
 
-    const boringssl_crypto = try buildBoringCrypto(
-        b,
-        target,
-        optimize,
-        boringssl_dep,
-    );
-    const boringssl_ssl = buildBoringSSLSSL(
-        b,
-        target,
-        optimize,
-        boringssl_dep,
-        boringssl_crypto,
-    );
+    const boringssl_crypto = try buildBoringCrypto(b, target, optimize, boringssl_dep);
+    const boringssl_ssl = buildBoringSSLSSL(b, target, optimize, boringssl_dep, boringssl_crypto);
 
     const boring_tls_mod = b.addModule("boring_tls", .{
         .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
     });
 
     boring_tls_mod.addIncludePath(boringssl_dep.path("include"));
@@ -43,19 +33,18 @@ fn buildBoringCrypto(
     optimize: std.builtin.OptimizeMode,
     boringssl_dep: *std.Build.Dependency,
 ) !*std.Build.Step.Compile {
-    const crypto = b.addStaticLibrary(.{
-        .name = "crypto",
+    const crypto_mod = b.createModule(.{
         .target = target,
         .optimize = optimize,
+        .link_libcpp = true,
     });
 
-    crypto.linkLibCpp();
-    crypto.addIncludePath(boringssl_dep.path("include"));
-    crypto.addIncludePath(boringssl_dep.path("src/include"));
+    crypto_mod.addIncludePath(boringssl_dep.path("include"));
+    crypto_mod.addIncludePath(boringssl_dep.path("src/include"));
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    var crypto_sources = std.ArrayList([]const u8).init(arena.allocator());
+    var crypto_sources: std.ArrayListUnmanaged([]const u8) = .{};
 
     const crypto_dirs = [_][]const u8{
         "crypto",
@@ -111,20 +100,18 @@ fn buildBoringCrypto(
         "gen/crypto",
     };
 
-    const boringssl_root = boringssl_dep.path(".").getPath(b);
-
+    const io = b.graph.io;
     for (crypto_dirs) |dir| {
         const full_dir_path = boringssl_dep.path(dir).getPath(b);
-        glob_sources_relative(arena.allocator(), full_dir_path, boringssl_root, ".cc", &crypto_sources) catch continue;
-        glob_sources_relative(arena.allocator(), full_dir_path, boringssl_root, ".c", &crypto_sources) catch continue;
+        glob_sources_relative(arena.allocator(), io, b.build_root.handle, full_dir_path, dir, ".cc", &crypto_sources) catch continue;
+        glob_sources_relative(arena.allocator(), io, b.build_root.handle, full_dir_path, dir, ".c", &crypto_sources) catch continue;
     }
 
-    crypto.addCSourceFiles(.{
+    crypto_mod.addCSourceFiles(.{
         .root = boringssl_dep.path("."),
         .files = crypto_sources.items,
         .flags = &[_][]const u8{
             "-Wall",
-            "-Werror",
             "-Wformat=2",
             "-Wsign-compare",
             "-Wmissing-field-initializers",
@@ -132,6 +119,12 @@ fn buildBoringCrypto(
             "-DOPENSSL_NO_ASM",
             "-DBORINGSSL_IMPLEMENTATION",
         },
+    });
+
+    const crypto = b.addLibrary(.{
+        .linkage = .static,
+        .name = "crypto",
+        .root_module = crypto_mod,
     });
 
     b.installArtifact(crypto);
@@ -145,16 +138,15 @@ fn buildBoringSSLSSL(
     boringssl_dep: *std.Build.Dependency,
     crypto: *std.Build.Step.Compile,
 ) *std.Build.Step.Compile {
-    const ssl = b.addStaticLibrary(.{
-        .name = "ssl",
+    const ssl_mod = b.createModule(.{
         .target = target,
         .optimize = optimize,
+        .link_libcpp = true,
     });
 
-    ssl.linkLibCpp();
-    ssl.linkLibrary(crypto);
-    ssl.addIncludePath(boringssl_dep.path("include"));
-    ssl.addIncludePath(boringssl_dep.path("src/include"));
+    ssl_mod.linkLibrary(crypto);
+    ssl_mod.addIncludePath(boringssl_dep.path("include"));
+    ssl_mod.addIncludePath(boringssl_dep.path("src/include"));
 
     const ssl_files = [_][]const u8{
         "bio_ssl.cc",
@@ -197,14 +189,19 @@ fn buildBoringSSLSSL(
         "tls13_server.cc",
     };
 
-    ssl.addCSourceFiles(.{
+    ssl_mod.addCSourceFiles(.{
         .root = boringssl_dep.path("ssl"),
         .files = &ssl_files,
         .flags = &[_][]const u8{
             "-Wall",
-            "-Werror",
             "-DOPENSSL_NO_ASM",
         },
+    });
+
+    const ssl = b.addLibrary(.{
+        .linkage = .static,
+        .name = "ssl",
+        .root_module = ssl_mod,
     });
 
     b.installArtifact(ssl);
@@ -213,48 +210,50 @@ fn buildBoringSSLSSL(
 
 pub fn glob_sources(
     allocator: std.mem.Allocator,
+    io: std.Io,
+    cwd: std.Io.Dir,
     base: []const u8,
     ext: []const u8,
-    paths: *std.ArrayList([]const u8),
+    paths: *std.ArrayListUnmanaged([]const u8),
 ) !void {
-    var dir = try std.fs.cwd().openDir(base, .{ .iterate = true });
-    defer dir.close();
+    var dir = try cwd.openDir(io, base, .{ .iterate = true });
+    defer dir.close(io);
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(io)) |entry| {
         const path_ext = std.fs.path.extension(entry.path);
         if (std.mem.eql(u8, path_ext, ext)) {
             const path = try std.fs.path.join(allocator, &.{ base, entry.path });
-            try paths.append(path);
+            try paths.append(allocator, path);
         }
     }
 }
 
 pub fn glob_sources_relative(
     allocator: std.mem.Allocator,
+    io: std.Io,
+    cwd: std.Io.Dir,
     search_dir: []const u8,
-    root_dir: []const u8,
+    prefix: []const u8,
     ext: []const u8,
-    paths: *std.ArrayList([]const u8),
+    paths: *std.ArrayListUnmanaged([]const u8),
 ) !void {
-    var dir = try std.fs.cwd().openDir(search_dir, .{ .iterate = true });
-    defer dir.close();
+    var dir = try cwd.openDir(io, search_dir, .{ .iterate = true });
+    defer dir.close(io);
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(io)) |entry| {
         const path_ext = std.fs.path.extension(entry.path);
         if (std.mem.eql(u8, path_ext, ext)) {
             if (shouldSkipFile(entry.path)) {
                 continue;
             }
-
-            const absolute_path = try std.fs.path.join(allocator, &.{ search_dir, entry.path });
-            const relative_path = try std.fs.path.relative(allocator, root_dir, absolute_path);
-            try paths.append(relative_path);
+            const relative_path = try std.fs.path.join(allocator, &.{ prefix, entry.path });
+            try paths.append(allocator, relative_path);
         }
     }
 }

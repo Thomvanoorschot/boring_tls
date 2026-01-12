@@ -1,6 +1,34 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const c = @cImport({
+    @cDefine("OPENSSL_NO_ASM", "1");
+
+    switch (builtin.cpu.arch) {
+        .x86_64 => {
+            @cDefine("__x86_64", "1");
+            @cDefine("__x86_64__", "1");
+        },
+        .aarch64 => {
+            @cDefine("__AARCH64EL__", "1");
+            @cDefine("__aarch64__", "1");
+        },
+        .x86 => {
+            @cDefine("__i386__", "1");
+        },
+        .arm => {
+            @cDefine("__ARMEL__", "1");
+        },
+        else => {},
+    }
+
+    switch (builtin.os.tag) {
+        .linux => @cDefine("__linux__", "1"),
+        .macos => @cDefine("__APPLE__", "1"),
+        .windows => @cDefine("_WIN32", "1"),
+        else => {},
+    }
+
     @cInclude("openssl/ssl.h");
     @cInclude("openssl/err.h");
     @cInclude("openssl/bio.h");
