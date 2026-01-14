@@ -49,7 +49,9 @@ pub const TlsError = error{
     TlsConnectionClosed,
 };
 
-pub const BUFFER_SIZE = 4096;
+/// Buffer size for TLS operations - must be large enough to handle full TLS records
+/// TLS records can be up to 16KB, and we may receive multiple records at once
+pub const BUFFER_SIZE = 32 * 1024;  // 32KB
 
 pub fn initOpenSsl() void {
     _ = c.OPENSSL_init_ssl(c.OPENSSL_INIT_LOAD_SSL_STRINGS | c.OPENSSL_INIT_LOAD_CRYPTO_STRINGS, null);

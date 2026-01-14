@@ -174,18 +174,28 @@ pub const TlsClient = struct {
         self.buffers.resetDecrypted();
         var temp_buf: [BUFFER_SIZE]u8 = undefined;
 
-        const bytes_read = c.SSL_read(self.ssl, &temp_buf, temp_buf.len);
-        if (bytes_read > 0) {
-            const read_size = @as(usize, @intCast(bytes_read));
-            if (read_size > self.buffers.decrypted_buffer.len) {
-                return TlsError.TlsReadFailed;
+        // Loop to read all available decrypted data
+        while (self.buffers.decrypted_len < self.buffers.decrypted_buffer.len) {
+            const bytes_read = c.SSL_read(self.ssl, &temp_buf, temp_buf.len);
+            if (bytes_read > 0) {
+                const read_size = @as(usize, @intCast(bytes_read));
+                const space_left = self.buffers.decrypted_buffer.len - self.buffers.decrypted_len;
+                const copy_size = @min(read_size, space_left);
+                @memcpy(self.buffers.decrypted_buffer[self.buffers.decrypted_len..][0..copy_size], temp_buf[0..copy_size]);
+                self.buffers.decrypted_len += copy_size;
+            } else {
+                const ssl_error = c.SSL_get_error(self.ssl, bytes_read);
+                if (ssl_error == c.SSL_ERROR_WANT_READ or ssl_error == c.SSL_ERROR_WANT_WRITE) {
+                    break; // No more data available right now
+                } else if (ssl_error == c.SSL_ERROR_ZERO_RETURN) {
+                    break; // Connection closed cleanly
+                } else {
+                    return tls.TlsError.TlsReadFailed;
+                }
             }
-            @memcpy(self.buffers.decrypted_buffer[0..read_size], temp_buf[0..read_size]);
-            self.buffers.decrypted_len = read_size;
-            return self.buffers.getDecryptedSlice();
         }
 
-        return try tls.handleSslReadError(self.ssl, bytes_read);
+        return if (self.buffers.decrypted_len > 0) self.buffers.getDecryptedSlice() else null;
     }
 
     fn writeEncryptedData(self: *Self, data: []const u8) !void {
